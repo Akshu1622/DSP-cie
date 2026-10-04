@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Plant Health & Chlorophyll Monitoring System using DSP
 
 React/Vite dashboard + FastAPI backend. Uses the **uploaded** data only (`data/cpdata.csv`, `data/leaf_images/`, unmodified).
@@ -58,3 +59,7 @@ All 1702 images segment without failure. API tested: sample + upload analysis, i
 * No soil moisture / light / chlorophyll reference -> no calibration; greenness depends on camera and lighting, and lesions lower leaf-mean values.
 * Health thresholds are generic engineering rules, not agronomically validated for a specific crop.
 * Future: live sensor stream (ESP32/MQTT), SPAD calibration, other filters (Chebyshev, FIR, notch), lesion segmentation, per-crop thresholds.
+=======
+# DSP-cie
+DSP cie project plants health detection
+>>>>>>> cb25e98b4aeb463915a4bd090584dce60d725ad0
