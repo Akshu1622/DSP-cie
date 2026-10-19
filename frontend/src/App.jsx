@@ -2,8 +2,38 @@ import { useEffect, useRef, useState } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, AreaChart, Area } from "recharts";
 import { api } from "./api.js";
 
-const COLS = { temperature: ["Temperature", "°C"], humidity: ["Humidity", "%"], ph: ["pH", ""], rainfall: ["Rainfall", "mm"] };
+const COLS = { temperature: ["Temperature", "°C"], humidity: ["Humidity", "%"], ph: ["pH", ""] };
 const tick = { fontSize: 11, fontFamily: "IBM Plex Mono, monospace" };
+
+const LEAF_MEASURES = {
+  High: {
+    label: "Good (Healthy)",
+    badgeClass: "lvl-High",
+    suggestions: [
+      "Maintain current irrigation schedule and balanced nutrient supply to sustain optimal vegetative growth.",
+      "Continue regular crop scouting and preventative pest/fungal monitoring to preserve high foliage vigor.",
+      "Ensure proper air circulation and sunlight exposure around the canopy to avoid microclimate stress."
+    ]
+  },
+  Moderate: {
+    label: "Medium (Moderate Stress)",
+    badgeClass: "lvl-Moderate",
+    suggestions: [
+      "Inspect soil moisture depth and calibrate watering volume to prevent mild dehydration or over-saturation.",
+      "Perform a soil/tissue nutrient check; apply balanced foliar spray (micro-nutrients / nitrogen) if pale spots emerge.",
+      "Monitor canopy temperature and humidity closely to avoid progression toward severe chlorophyll loss."
+    ]
+  },
+  Low: {
+    label: "Stressed (Chlorotic / Unhealthy)",
+    badgeClass: "lvl-Low",
+    suggestions: [
+      "Check root zone immediately for moisture stress (severe drought or waterlogging causing root suffocation).",
+      "Screen for fungal, bacterial blight or pest infestation; isolate affected foliage and apply targeted treatment.",
+      "Correct soil pH and apply fast-acting nitrogen/iron supplementation to restore chlorophyll synthesis."
+    ]
+  }
+};
 
 function Chart({ title, sub, caption, children }) {
   return (<div className="card"><h2>{title}<span>{sub}</span></h2><div style={{ height: 260 }}><ResponsiveContainer>{children}</ResponsiveContainer></div>{caption && <p className="cap">{caption}</p>}</div>);
@@ -74,7 +104,8 @@ export default function App() {
   const rd = dsp?.readings || {};
   const sig = dsp ? dsp.n.map((n, i) => ({ n, raw: dsp.raw[i], filtered: dsp.filtered[i] })) : [];
   const fft = dsp ? dsp.freq.map((f, i) => ({ f, raw: dsp.mag_raw[i], filtered: dsp.mag_filtered[i] })) : [];
-  const resp = dsp ? dsp.filter_response.freq.map((f, i) => ({ f, db: dsp.filter_response.gain_db[i] })) : [];
+  const fr = dsp?.filter_response;
+  const resp = fr ? fr.freq.map((f, i) => ({ f, h1: fr.gain_db[i], h2: fr.gain_db_effective[i], raw: fr.raw_spectrum_db[i], filt: fr.filtered_spectrum_db[i] })) : [];
   const rgbBars = leaf ? ["R", "G", "B"].map(c => ({ c, v: leaf.rgb_mean[c] })) : [];
   const hist = leaf ? leaf.histogram.bins.map((b, i) => ({ b, R: leaf.histogram.R[i], G: leaf.histogram.G[i], B: leaf.histogram.B[i] })) : [];
   const cls = health ? (health.status === "HEALTHY" ? "HEALTHY" : health.status === "STRESSED" ? "STRESSED" : "MODERATE") : "";
@@ -94,9 +125,9 @@ export default function App() {
       </div>
 
       <div className="cards">
-        <div className="pc"><label>Chlorophyll / Greenness</label><div className={leaf ? "lvl-" + leaf.greenness_level : ""}>{leaf ? leaf.greenness_level.toUpperCase() : "—"}</div><em>{leaf ? `score ${leaf.greenness_score}/100` : ""}</em></div>
+        <div className="pc"><label>Chlorophyll / Greenness</label><div className={leaf ? "lvl-" + leaf.greenness_level : ""}>{leaf ? (leaf.greenness_level === "High" ? "GOOD" : leaf.greenness_level === "Moderate" ? "MEDIUM" : "STRESSED") : "—"}</div><em>{leaf ? `score ${leaf.greenness_score}/100 (${leaf.greenness_level})` : ""}</em></div>
         {Object.keys(COLS).map(k => (
-          <div className="pc" key={k}><label>{COLS[k][0]}{k === "rainfall" ? " (wetness proxy)" : ""}</label>
+          <div className="pc" key={k}><label>{COLS[k][0]}</label>
             <div>{rd[k] ?? "—"}<small> {COLS[k][1]}</small></div><em>filtered, last sample</em></div>))}
       </div>
 
@@ -134,6 +165,26 @@ export default function App() {
               </div>
               <p className="note">{leaf.note}</p></>}
           </div>
+
+          {/* Measures to be taken section filling the gap below RGB analysis */}
+          <div className="card">
+            <div className="measures-title">
+              <h2>Measures to be Taken<span>Tailored agronomic actions</span></h2>
+              {leaf && <span className={"badge " + (LEAF_MEASURES[leaf.greenness_level]?.badgeClass || "")}>Condition: {leaf.greenness_level === "High" ? "Good" : leaf.greenness_level === "Moderate" ? "Medium" : "Stressed"}</span>}
+            </div>
+            {leaf ? (
+              <ul className="measures-list">
+                {(LEAF_MEASURES[leaf.greenness_level]?.suggestions || []).map((s, idx) => (
+                  <li key={idx} className="measure-item">
+                    <span className="measure-num">{idx + 1}</span>
+                    <span className="measure-text">{s}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="measures-empty">Select or upload a leaf image to see corrective measures.</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -169,9 +220,13 @@ export default function App() {
               <Line dataKey="raw" name="raw" stroke="#9a9a8c" dot={false} isAnimationActive={false} />
               <Line dataKey="filtered" name="filtered" stroke="#2f6b3f" dot={false} strokeWidth={2} isAnimationActive={false} /></LineChart>
           </Chart>
-          <Chart title="Filter frequency response" sub="|H(f)| in dB" caption="Flat in the passband, −3 dB at fc, then rolls off faster as the order increases (single pass shown).">
-            <LineChart data={resp}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="f" type="number" domain={[0, nyq]} tick={tick} tickFormatter={v => (+v).toFixed(2)} /><YAxis tick={tick} domain={[-80, 5]} /><Tooltip formatter={v => (+v).toFixed(1) + " dB"} />
-              <ReferenceLine x={p.cutoff} stroke="#bf3b2b" strokeDasharray="5 4" /><Line dataKey="db" name="gain (dB)" stroke="#2c6fbb" dot={false} strokeWidth={2} isAnimationActive={false} /></LineChart>
+          <Chart title="Filter response vs signal spectrum" sub="dB (spectra relative to raw peak)" caption="Blue = Butterworth gain H(f): it depends only on fs, fc and order. Grey/green = this signal's spectrum before/after filtering: it changes with the leaf and signal. Zero-phase (forward+backward) filtering squares H(f), i.e. doubles the dB attenuation.">
+            <LineChart data={resp}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="f" type="number" domain={[0, nyq]} tick={tick} tickFormatter={v => (+v).toFixed(2)} /><YAxis tick={tick} type="number" domain={[-100, 5]} allowDataOverflow ticks={[0, -20, -40, -60, -80, -100]} /><Tooltip formatter={v => (+v).toFixed(1) + " dB"} labelFormatter={v => `f = ${(+v).toFixed(3)}`} /><Legend />
+              <ReferenceLine x={p.cutoff} stroke="#bf3b2b" strokeDasharray="5 4" /><ReferenceLine y={-3} stroke="#999" strokeDasharray="2 3" />
+              <Line dataKey="raw" name="raw spectrum" stroke="#b5b5a6" dot={false} strokeWidth={1} isAnimationActive={false} />
+              <Line dataKey="filt" name="filtered spectrum" stroke="#2f6b3f" dot={false} strokeWidth={1.6} isAnimationActive={false} />
+              <Line dataKey="h1" name="H(f) one pass" stroke="#2c6fbb" dot={false} strokeWidth={2} isAnimationActive={false} />
+              <Line dataKey="h2" name="H(f) zero-phase" stroke="#7a3fb0" dot={false} strokeWidth={1.6} strokeDasharray="5 3" isAnimationActive={false} /></LineChart>
           </Chart>
         </div>
         <p className="note">{dsp?.time_axis_note} {pair ? "Sensor window is paired with the selected leaf (a demo link: leaf images and sensor rows were not recorded together). " : ""}The sensor file has no timestamps, so fs is an assumed value you can change; spectrum and filter behave identically for any assumed fs (only the axis labels scale).</p>

@@ -2,6 +2,8 @@
 import numpy as np
 from scipy import signal
 
+DB_FLOOR = -100.0   # dB values below this are clipped so plots stay readable
+
 
 def spectrum(x, fs):
     """Single-sided amplitude spectrum of x[n] using the FFT.
@@ -47,9 +49,10 @@ def butter_lowpass(x, fs, cutoff, order):
         raise ValueError(f"Cutoff must be between 0 and Nyquist ({nyq:g}).")
     sos = signal.butter(order, cutoff / nyq, btype="low", output="sos")
     y = signal.sosfiltfilt(sos, x)
-    # frequency response of the filter itself (single pass) for plotting
-    w, h = signal.sosfreqz(sos, worN=256, fs=fs)
-    return y, sos, w, 20 * np.log10(np.maximum(np.abs(h), 1e-6))
+    # frequency response of the filter itself (single pass), 512 points from 0 to fs/2
+    w, h = signal.sosfreqz(sos, worN=512, fs=fs)
+    h_db = np.maximum(20 * np.log10(np.maximum(np.abs(h), 1e-9)), DB_FLOOR)
+    return y, sos, w, h_db
 
 
 def noise_metrics(raw, filt, f_raw, mag_raw, f_f, mag_f, cutoff):
@@ -66,6 +69,11 @@ def noise_metrics(raw, filt, f_raw, mag_raw, f_f, mag_f, cutoff):
     }
 
 
+def to_db(mag, ref):
+    """Amplitude -> dB relative to ref, clipped at DB_FLOOR."""
+    return np.maximum(20 * np.log10(np.maximum(mag, 1e-12) / ref), DB_FLOOR)
+
+
 def run_dsp(x, fs, cutoff, order):
     x = np.asarray(x, float)
     if len(x) < 16:
@@ -74,11 +82,21 @@ def run_dsp(x, fs, cutoff, order):
     f1, m1 = spectrum(x, fs)
     f2, m2 = spectrum(y, fs)
     peak_f, peak_a = dominant_frequency(f1, m1)
+    ref = max(float(np.max(m1)), 1e-12)         # 0 dB = strongest raw spectral peak
     r = lambda a: np.round(a, 4).tolist()
     return {
         "n": list(range(len(x))), "raw": r(x), "filtered": r(y),
         "freq": r(f1), "mag_raw": r(m1), "mag_filtered": r(m2),
-        "filter_response": {"freq": r(w), "gain_db": r(h_db)},
+        # H(f) depends only on fs, cutoff and order (NOT on the data). The two spectra below are the
+        # DATA's spectra (relative to the raw peak, in dB) resampled on the same axis, so this plot
+        # changes with the signal/leaf while the filter curve itself stays a property of the filter.
+        "filter_response": {
+            "freq": r(w),
+            "gain_db": r(h_db),                                   # one pass of the filter
+            "gain_db_effective": r(np.maximum(2 * h_db, DB_FLOOR)),  # forward+backward (zero-phase) = squared
+            "raw_spectrum_db": r(np.interp(w, f1, to_db(m1, ref))),
+            "filtered_spectrum_db": r(np.interp(w, f2, to_db(m2, ref))),
+        },
         "params": {"fs": fs, "cutoff": cutoff, "order": order, "nyquist": fs / 2, "N": len(x),
                    "freq_resolution": round(fs / len(x), 5), "filter_type": "Butterworth IIR low-pass (zero-phase, sosfiltfilt)"},
         "dominant": {"frequency": round(peak_f, 4), "amplitude": round(peak_a, 4),

@@ -32,11 +32,11 @@ data/     cpdata.csv (3100 rows)   leaf_images/ (1702 JPGs, 256x256)
 * `leaf_images/`: 1702 leaves (bacterial-spot images: 1403 `GCREC_Bact.Sp`, 299 `UF.GRC_BS_Lab Leaf`) on a grey background. No chlorophyll (SPAD) labels exist, so greenness is a **proxy**, not a lab concentration.
 
 ## Dataset parameters used
-temperature, humidity, ph, rainfall (all DSP-filtered) + RGB of every leaf pixel.
+temperature, humidity, ph (DSP-filtered sensor readings) + RGB of every leaf pixel.
 
 ## Method
 **Leaf**: HSV saturation + Otsu threshold -> morphology -> largest blob = leaf mask. Over leaf pixels: mean R,G,B; ExG = 2G-R-B; chromatic ExG = 2g-r-b; normalized green G/(R+G+B); NGRDI = (G-R)/(G+R).
-Low/Moderate/High is decided on **NGRDI**, because chromatic ExG *rose* for yellowed leaves in this dataset (yellow-green has a high G share) while NGRDI falls. Thresholds = tertiles of the 1702 images (`config.py`).
+Classified into 3 conditions: **Good (High)**, **Medium (Moderate)**, and **Stressed (Low)** with 3 tailored agronomic suggestions / measures to be taken displayed below the leaf condition.
 
 **DSP**: x[n] = a window of N rows of one CSV column. The CSV has no timestamps, so **row index = n and fs = 1 sample/hour is an ASSUMPTION** (adjustable in the UI). Steps: Hann window -> FFT -> Butterworth IIR low-pass (SOS form, order 4 default, applied with `sosfiltfilt` = zero phase) -> FFT of y[n].
 Noise metrics: energy above fc in dB (raw vs filtered), jitter (std of first difference) reduction %, std of (raw - filtered).
