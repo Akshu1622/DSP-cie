@@ -42,8 +42,6 @@ function Chart({ title, sub, caption, children }) {
 export default function App() {
   const [online, setOnline] = useState(false);
   const [info, setInfo] = useState(null);
-  const [names, setNames] = useState([]);
-  const [sel, setSel] = useState("");
   const [leaf, setLeaf] = useState(null);
   const [view, setView] = useState("original");
   const [dsp, setDsp] = useState(null);
@@ -51,34 +49,26 @@ export default function App() {
   const [p, setP] = useState({ column: "temperature", start: 0, n: 256, fs: 1, cutoff: 0.1, order: 4 });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pair, setPair] = useState(true); // demo: tie the sensor window to the selected leaf
+  const [pair, setPair] = useState(true); // demo: tie the sensor window to the uploaded leaf
   const fileRef = useRef();
 
-  // initial load: backend status, dataset info and sample image list
+  // initial load: backend status and dataset info
   useEffect(() => {
     (async () => {
       try {
         await api.status(); setOnline(true);
-        const [i, im] = await Promise.all([api.info(), api.images(0, 60)]);
-        setInfo(i); setNames(im.items);
-        if (im.items[0]) pick(im.items[0]);
+        const i = await api.info();
+        setInfo(i);
       } catch (e) { setErr(e.message); }
     })();
   }, []);
 
-  async function pick(name) {
-    setSel(name); setBusy(true); setErr("");
-    try { setLeaf(await api.sample(name)); setView("original"); } catch (e) { setErr(e.message); }
-    setBusy(false);
-  }
   async function onUpload(e) {
     const f = e.target.files[0]; if (!f) return;
-    setBusy(true); setErr(""); setSel("");
+    setBusy(true); setErr("");
     try { setLeaf(await api.upload(f)); setView("original"); } catch (e) { setErr(e.message); }
     setBusy(false); e.target.value = "";
   }
-  function random() { fetch("/api/images?offset=0&limit=1").then(r => r.json()).then(async d => {
-    const off = Math.floor(Math.random() * d.total); const r = await api.images(off, 1); if (r.items[0]) { setNames(n => n.includes(r.items[0]) ? n : [r.items[0], ...n]); pick(r.items[0]); } }).catch(e => setErr(e.message)); }
 
   // DSP request (debounced so sliders feel smooth)
   useEffect(() => {
@@ -120,7 +110,7 @@ export default function App() {
       {err && <div className="err">⚠ {err}</div>}
 
       <div className={"banner " + cls}>
-        <div><small>OVERALL PLANT HEALTH</small><br /><b>{health ? health.status : "—"}</b><p>{health ? health.message : "Select a leaf image to begin."}</p></div>
+        <div><small>OVERALL PLANT HEALTH</small><br /><b>{health ? health.status : "—"}</b><p>{health ? health.message : "Upload a leaf image to begin."}</p></div>
         {health && <small>stress points: {health.stress_points} (thresholds in backend/config.py)</small>}
       </div>
 
@@ -134,15 +124,10 @@ export default function App() {
       <div className="grid g2">
         <div className={"card " + (busy ? "load" : "")}>
           <h2>Leaf image<span>{leaf ? `${leaf.leaf_coverage_pct}% leaf pixels` : ""}</span></h2>
-          <div className="imgbox">{imgSrc ? <img src={imgSrc} alt={view} /> : "no image"}</div>
+          <div className="imgbox">{imgSrc ? <img src={imgSrc} alt={view} /> : <div style={{ textAlign: "center", color: "var(--mute)", padding: 20 }}><span>🌿</span><p style={{ margin: "6px 0 0", font: "12px var(--mono)" }}>No leaf uploaded yet.<br />Upload a leaf image to start analysis.</p></div>}</div>
           <div className="tabs">{[["original", "Original"], ["segmented", "Segmented"], ["exg", "ExG map"]].map(([k, l]) => <button key={k} className={view === k ? "act" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
-          <select value={sel} onChange={e => pick(e.target.value)} style={{ width: "100%" }}>
-            <option value="" disabled>Select dataset leaf…</option>
-            {names.map((n, i) => <option key={n} value={n}>{i + 1}. {n.split("___")[1] || n}</option>)}
-          </select>
           <div className="row">
-            <button className="btn" onClick={random}>🎲 Random from dataset</button>
-            <button className="btn primary" onClick={() => fileRef.current.click()}>⬆ Upload leaf</button>
+            <button className="btn primary" style={{ width: "100%", padding: "10px", fontSize: "13px" }} onClick={() => fileRef.current.click()}>⬆ Upload leaf</button>
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
           </div>
           {info && <p className="cap">{info.rows} sensor rows · columns: {info.columns.join(", ")}</p>}
@@ -151,7 +136,7 @@ export default function App() {
         <div className="grid">
           <div className="card">
             <h2>RGB &amp; greenness analysis<span>over leaf pixels only</span></h2>
-            {leaf && <>
+            {leaf ? <>
               <div className="metrics">
                 <div className="m"><span>ExG = 2G−R−B</span><b>{leaf.exg_raw_mean}</b></div>
                 <div className="m"><span>ExG (normalised)</span><b>{leaf.exg_norm_mean}</b></div>
@@ -163,7 +148,9 @@ export default function App() {
                 <div style={{ height: 200 }}><ResponsiveContainer><BarChart data={rgbBars}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="c" tick={tick} /><YAxis tick={tick} domain={[0, 255]} /><Tooltip /><Bar dataKey="v" name="mean value" isAnimationActive={false} fill="#2f6b3f" /></BarChart></ResponsiveContainer></div>
                 <div style={{ height: 200 }}><ResponsiveContainer><AreaChart data={hist}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="b" tick={tick} /><YAxis tick={tick} /><Tooltip /><Area dataKey="R" stroke="#c0392b" fill="#c0392b" fillOpacity={.25} isAnimationActive={false} /><Area dataKey="G" stroke="#2f8f4e" fill="#2f8f4e" fillOpacity={.25} isAnimationActive={false} /><Area dataKey="B" stroke="#2c6fbb" fill="#2c6fbb" fillOpacity={.25} isAnimationActive={false} /></AreaChart></ResponsiveContainer></div>
               </div>
-              <p className="note">{leaf.note}</p></>}
+              <p className="note">{leaf.note}</p></> : (
+              <p className="measures-empty" style={{ margin: "20px 0" }}>Upload a leaf image to view RGB distribution and chromatic greenness analysis.</p>
+            )}
           </div>
 
           {/* Measures to be taken section filling the gap below RGB analysis */}
@@ -182,7 +169,7 @@ export default function App() {
                 ))}
               </ul>
             ) : (
-              <p className="measures-empty">Select or upload a leaf image to see corrective measures.</p>
+              <p className="measures-empty">Upload a leaf image to see corrective measures.</p>
             )}
           </div>
         </div>
@@ -197,7 +184,7 @@ export default function App() {
           <div><label>Sampling fs: <b>{p.fs}</b> samples/hr</label><input type="range" min="0.5" max="4" step="0.5" value={p.fs} onChange={e => { const fs = +e.target.value; setP(o => ({ ...o, fs, cutoff: Math.min(o.cutoff, +(fs / 2 - 0.01).toFixed(2)) })); }} /></div>
           <div><label>Cutoff fc: <b>{p.cutoff}</b> cycles/hr</label><input type="range" min="0.01" max={+(nyq - 0.01).toFixed(2)} step="0.01" value={p.cutoff} onChange={e => set("cutoff", +e.target.value)} /></div>
           <div><label>Filter order: <b>{p.order}</b></label><input type="range" min="1" max="10" step="1" value={p.order} onChange={e => set("order", +e.target.value)} /></div>
-          <div><label>Leaf ↔ sensor window</label><label style={{ color: "var(--ink)", cursor: "pointer" }}><input type="checkbox" checked={pair} onChange={e => setPair(e.target.checked)} /> pair with selected leaf</label></div>
+          <div><label>Leaf ↔ sensor window</label><label style={{ color: "var(--ink)", cursor: "pointer" }}><input type="checkbox" checked={pair} onChange={e => setPair(e.target.checked)} /> pair with uploaded leaf</label></div>
         </div>
         {dsp && <div className="metrics">
           <div className="m"><span>Sampling freq fs</span><b>{dsp.params.fs} /hr</b></div>
@@ -229,7 +216,7 @@ export default function App() {
               <Line dataKey="h2" name="H(f) zero-phase" stroke="#7a3fb0" dot={false} strokeWidth={1.6} strokeDasharray="5 3" isAnimationActive={false} /></LineChart>
           </Chart>
         </div>
-        <p className="note">{dsp?.time_axis_note} {pair ? "Sensor window is paired with the selected leaf (a demo link: leaf images and sensor rows were not recorded together). " : ""}The sensor file has no timestamps, so fs is an assumed value you can change; spectrum and filter behave identically for any assumed fs (only the axis labels scale).</p>
+        <p className="note">{dsp?.time_axis_note} {pair ? "Sensor window is paired with the uploaded leaf (a demo link: leaf images and sensor rows were not recorded together). " : ""}The sensor file has no timestamps, so fs is an assumed value you can change; spectrum and filter behave identically for any assumed fs (only the axis labels scale).</p>
       </div>
     </div>
   );
